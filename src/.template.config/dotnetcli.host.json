@@ -92,6 +92,10 @@
     "UseProgramMain": {
       "longName": "use-program-main",
       "shortName": ""
+    },
+    "DataSeeding": {
+      "longName": "data-seeding",
+      "shortName": ""
     }
   },
   "usageExamples": [

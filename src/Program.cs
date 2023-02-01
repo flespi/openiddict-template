@@ -26,6 +26,7 @@ using Microsoft.IdentityModel.Tokens;
 using Graph = Microsoft.Graph;
 #endif
 #if (IndividualLocalAuth)
+using Company.WebApplication1;
 using Company.WebApplication1.Data;
 #endif
 #if (OrganizationalAuth || IndividualB2CAuth || IndividualLocalAuth || MultiOrgAuth || GenerateGraph || WindowsAuth)
@@ -33,19 +34,38 @@ using Company.WebApplication1.Data;
 #endif
 var builder = WebApplication.CreateBuilder(args);
 
+#if (DataSeeding)
+builder.Configuration.AddJsonFile("oidc.json", optional: true, reloadOnChange: true);
+
+#endif
 // Add services to the container.
 #if (IndividualLocalAuth)
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
+var appConnectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
+builder.Services.AddDbContext<ApplicationDbContext>(options => {
 #if (UseLocalDB)
-    options.UseSqlServer(connectionString));
+    options.UseSqlServer(appConnectionString);
 #else
-    options.UseSqlite(connectionString));
+    options.UseSqlite(appConnectionString);
 #endif
+});
+
+var idpConnectionString = builder.Configuration.GetConnectionString("IdentityProvider") ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
+builder.Services.AddDbContext<IdentityProviderDbContext>(options => {
+#if (UseLocalDB)
+    options.UseSqlServer(idpConnectionString);
+#else
+    options.UseSqlite(idpConnectionString);
+#endif
+    options.UseOpenIddict();
+});
+
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
 builder.Services.AddDefaultIdentity<IdentityUser>(options => options.SignIn.RequireConfirmedAccount = true)
+    .AddRoles<IdentityRole>()
     .AddEntityFrameworkStores<ApplicationDbContext>();
+
+builder.Services.AddOpenIddictServer();
 #elif (OrganizationalAuth)
 #if (GenerateApiOrGraph)
 var initialScopes = builder.Configuration["DownstreamApi:Scopes"]?.Split(' ');
@@ -116,6 +136,13 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.UseMigrationsEndPoint();
+    #if (DataSeeding)
+    using (var scope = app.Services.CreateScope())
+    {
+        var initialiser = scope.ServiceProvider.GetRequiredService<OpenIddictInitializer>();
+        await initialiser.SeedAsync();
+    }
+    #endif
 }
 else
 #else
@@ -135,6 +162,16 @@ app.UseHttpsRedirection();
 app.UseStaticFiles();
 
 app.UseRouting();
+
+#if (IndividualLocalAuth)
+
+app.UseCors(options =>
+    options
+        .AllowAnyOrigin()
+        .AllowAnyMethod()
+	    .AllowAnyHeader()
+);
+#endif
 
 app.UseAuthorization();
 
